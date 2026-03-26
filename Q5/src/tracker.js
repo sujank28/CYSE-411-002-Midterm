@@ -1,130 +1,107 @@
 // ============================================================
-//  CYSE 411 – Mid-Term Exam V2  |  Q5 Starter File
-//  Incident Tracker Application
+// CYSE 411 — Mid-Term Exam V2 | Q5 Starter File
+// Incident Tracker Application
 
-
-//  Application State
-
+// Application State
 const ACCEPTED_SEVERITIES = ["low", "medium", "high", "critical"];
-const ACCEPTED_FILTERS    = ["all", "low", "medium", "high", "critical"];
+const ACCEPTED_FILTERS = ["all", "low", "medium", "high", "critical"];
 
-// Current filter selection (set during state load, used on save)
 let currentFilter = "all";
 
 
-
-//  Q5.C  Dashboard State – Load
-//  Reads the last selected filter from localStorage.
-//  VULNERABILITY: JSON.parse is called without a try/catch.
-//  The stored filter value is used without checking whether
-//  it belongs to the accepted list.
-
-
-function loadDashboardState() {
-    const raw   = localStorage.getItem("dashboardState");
-    const state = JSON.parse(raw);             // No try/catch
-    currentFilter = state.filter;              // No enum validation
-    applyFilter(currentFilter);
-}
-
-
-//  Q5.C  Dashboard State – Save
-//  Writes the selected filter back to localStorage after a fetch.
-//  VULNERABILITY: The raw value from the DOM input is written
-//  directly to localStorage without validating it against the
-//  accepted list.
-
-
-function saveDashboardState() {
-    const filterInput = document.getElementById("filter-select");
-    const filter      = filterInput.value;    // Not validated before storing
-    localStorage.setItem("dashboardState", JSON.stringify({ filter: filter }));
-    currentFilter = filter;
-}
-
-
-
-//  Q5.A  Fetch Incidents
-//  Retrieves open incidents from the REST API.
-//  VULNERABILITY 1: fetch() is called but NOT awaited.
-//    'res' holds a Promise, not a Response object.
-//  VULNERABILITY 2: response.ok is never checked, so
-//    HTTP 401 / 500 error bodies are processed as valid data.
-//  VULNERABILITY 3: No try/catch – a network failure will
-//    crash the function with an unhandled rejection.
-
+// ============================================================
+// Q5.A — Secure Async Fetch with HTTP Status Checking
 
 async function fetchIncidents() {
-    const res  = fetch("/api/incidents");      // Missing await
-    const data = res.json();                   // Missing await; res is a Promise
-    return data;
+    try {
+        const res = await fetch("/api/incidents");
+
+        if (!res.ok) {
+            throw new Error("HTTP error: " + res.status);
+        }
+
+        const data = await res.json();
+
+        if (!Array.isArray(data)) {
+            return [];
+        }
+
+        return data;
+    } catch (err) {
+        console.error("Fetch failed:", err);
+        return [];
+    }
 }
 
 
-
-//  Q5.B  Render Incidents
-//  Builds the incident list in the dashboard.
-//  VULNERABILITY 1: Incident data (title, severity) is inserted
-//    via innerHTML – a stored XSS risk if the API returns
-//    attacker-controlled content.
-//  VULNERABILITY 2: No validation of the incidents array or
-//    individual incident fields before rendering.
-
+// ============================================================
+// Q5.B — Safe Incident Rendering
 
 function renderIncidents(incidents) {
     const container = document.getElementById("incident-list");
-    container.innerHTML = "";                  // Clear previous results
+    container.textContent = "";
 
-    incidents.forEach(function (incident) {
-        const item = document.createElement("li");
-        // UNSAFE – directly inserts API response as HTML
-        item.innerHTML =
-            "<strong>" + incident.title + "</strong>" +
-            " <span class='severity severity-" + incident.severity + "'>" +
-            incident.severity + "</span>";
-        container.appendChild(item);
+    if (!Array.isArray(incidents)) {
+        const errorMsg = document.createElement("p");
+        errorMsg.textContent = "Unable to load incidents.";
+        container.appendChild(errorMsg);
+        return;
+    }
+
+    incidents.forEach((incident) => {
+        if (
+            !incident ||
+            typeof incident.title !== "string" ||
+            incident.title.trim() === "" ||
+            !ACCEPTED_SEVERITIES.includes(incident.severity)
+        ) {
+            console.warn("Invalid incident skipped:", incident);
+            return;
+        }
+
+        const li = document.createElement("li");
+
+        const title = document.createElement("span");
+        title.textContent = incident.title.trim();
+
+        const severity = document.createElement("span");
+        severity.textContent = " (" + incident.severity + ")";
+
+        li.appendChild(title);
+        li.appendChild(severity);
+
+        container.appendChild(li);
     });
 }
 
 
+// ============================================================
+// Q5.C — Secure Dashboard State Management
 
-//  Filter Helper (provided – do not modify)
-//  Hides/shows rendered items based on selected severity.
+function loadDashboardState() {
+    const raw = localStorage.getItem("dashboardState");
 
+    try {
+        const state = JSON.parse(raw);
 
-function applyFilter(filter) {
-    const items = document.querySelectorAll("#incident-list li");
-    items.forEach(function (item) {
-        const badge = item.querySelector(".severity");
-        if (!badge) return;
-        const sev = badge.textContent.trim();
-        item.style.display = (filter === "all" || sev === filter) ? "" : "none";
-    });
-    currentFilter = filter;
+        if (!state || !ACCEPTED_FILTERS.includes(state.filter)) {
+            return { filter: "all" };
+        }
+
+        return { filter: state.filter };
+    } catch (e) {
+        return { filter: "all" };
+    }
 }
 
+function saveDashboardState(filterValue) {
+    if (!ACCEPTED_FILTERS.includes(filterValue)) {
+        filterValue = "all";
+    }
 
+    const state = {
+        filter: filterValue
+    };
 
-//  Application Bootstrap
-//  Runs when the page finishes loading.
-
-
-document.addEventListener("DOMContentLoaded", async function () {
-
-    // Q5.C – Load saved filter state
-    loadDashboardState();
-
-    // Q5.A – Fetch incident data from the API
-    const incidents = await fetchIncidents();
-
-    // Q5.B – Render the incidents
-    renderIncidents(incidents);
-
-    // Filter select change handler
-    document.getElementById("filter-select").addEventListener("change", function () {
-        applyFilter(this.value);
-        // Q5.C – Save the new filter choice
-        saveDashboardState();
-    });
-
-});
+    localStorage.setItem("dashboardState", JSON.stringify(state));
+}
