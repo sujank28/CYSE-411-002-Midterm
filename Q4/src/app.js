@@ -55,13 +55,21 @@ function renderStatusMessage(containerElement, message) {
 
 function sanitizeSearchQuery(input) {
     const trimmed = String(input ?? "").trim();
-    const sanitized = trimmed.replace(/[^A-Za-z0-9 _-]/g, "").slice(0, 40);
 
-    if (sanitized === "") {
+    // Check allowed characters only
+    const validPattern = /^[A-Za-z0-9 _-]+$/;
+
+    // Reject if empty OR contains invalid characters
+    if (trimmed === "" || !validPattern.test(trimmed)) {
         return null;
     }
 
-    return sanitized;
+    // Enforce max length
+    if (trimmed.length > 40) {
+        return trimmed.slice(0, 40);
+    }
+
+    return trimmed;
 }
 
 function performSearch(query) {
